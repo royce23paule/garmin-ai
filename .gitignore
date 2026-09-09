@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.pyc
+
+# secrets & tokens - never commit these
+secrets/
+*.token
+*.pem
+client_secret*.json
+credentials.json
+token.json
+garmin_tokens/
+.env
+
+# personal health data - lives in Google Drive, not in git
+data/
+data.json
+*.session_local.json
