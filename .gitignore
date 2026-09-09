@@ -11,6 +11,7 @@ credentials.json
 token.json
 garmin_tokens/
 .env
+.streamlit/secrets.toml
 
 # personal health data - lives in Google Drive, not in git
 data/

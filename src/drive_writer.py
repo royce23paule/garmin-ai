@@ -1,8 +1,15 @@
-"""Create/update files inside the garmin/ Google Drive folder.
+"""Create/read/update files inside the garmin/ Google Drive folder.
 
 Uses the Drive v3 REST API directly via requests - consistent with
 gdrive_auth.py, no need for the heavier googleapiclient wrapper for what
-is just "find or create a file by name, then write its content".
+is just "find or create a file by name, then read/write its content".
+
+access_token and folder_id are passed in explicitly (fetched once by the
+caller) rather than looked up per call - a sync run writes many files and
+refreshing the token or querying the folder id every time would be
+wasteful and slow. This also lets the Streamlit app reuse the same
+functions with credentials sourced from st.secrets instead of this
+session's local secrets/ files.
 """
 
 from __future__ import annotations
@@ -11,7 +18,7 @@ import json
 
 import requests
 
-from gdrive_auth import DRIVE_API, get_access_token, get_garmin_folder_id
+from gdrive_auth import DRIVE_API
 
 NO_DATA = "keine Daten"
 
@@ -30,12 +37,26 @@ def _find_file_id(access_token: str, name: str, parent_id: str) -> str | None:
     return files[0]["id"] if files else None
 
 
-def write_file(name: str, content: str, mime_type: str = "text/markdown") -> str:
-    """Create or overwrite a file named `name` inside garmin/. Returns its file id."""
-    access_token = get_access_token()
-    folder_id = get_garmin_folder_id()
-    headers = {"Authorization": f"Bearer {access_token}"}
+def read_file(access_token: str, folder_id: str, name: str) -> bytes | None:
+    """Return the raw content of `name` inside the folder, or None if it doesn't exist."""
+    file_id = _find_file_id(access_token, name, folder_id)
+    if file_id is None:
+        return None
+    resp = requests.get(
+        f"{DRIVE_API}/files/{file_id}",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params={"alt": "media"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.content
 
+
+def write_file(
+    access_token: str, folder_id: str, name: str, content: str, mime_type: str = "text/markdown"
+) -> str:
+    """Create or overwrite a file named `name` inside the folder. Returns its file id."""
+    headers = {"Authorization": f"Bearer {access_token}"}
     existing_id = _find_file_id(access_token, name, folder_id)
     content_bytes = content.encode("utf-8")
 
@@ -74,8 +95,10 @@ def write_file(name: str, content: str, mime_type: str = "text/markdown") -> str
     return resp.json()["id"]
 
 
-def write_json(name: str, data) -> str:
-    return write_file(name, json.dumps(data, indent=2, ensure_ascii=False), "application/json")
+def write_json(access_token: str, folder_id: str, name: str, data) -> str:
+    return write_file(
+        access_token, folder_id, name, json.dumps(data, indent=2, ensure_ascii=False), "application/json"
+    )
 
 
 def fmt(value, unit: str = "", decimals: int | None = None) -> str:

@@ -15,6 +15,7 @@ import json
 from drive_writer import write_file, write_json
 from garmin_client import get_client
 from garmin_fetch import fetch_activities, fetch_daily_metrics
+from gdrive_auth import get_access_token, get_garmin_folder_id
 from markdown_notes import render_daily_note, render_workout_note
 
 
@@ -23,8 +24,10 @@ def _date_range(days: int) -> list[str]:
     return [(today - dt.timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
 
 
-def run_sync(days: int, dry_run: bool) -> dict:
-    garmin = get_client()
+def run_sync_with_client(garmin, access_token, folder_id, days: int, dry_run: bool) -> dict:
+    """Core sync loop, shared by the CLI entry point below and streamlit_app.py -
+    both authenticate differently, but the fetch/render/write logic is the same.
+    """
     dates = _date_range(days)
 
     daily_results = []
@@ -32,13 +35,13 @@ def run_sync(days: int, dry_run: bool) -> dict:
         metrics = fetch_daily_metrics(garmin, date_str)
         daily_results.append(metrics)
         if not dry_run:
-            write_file(f"{date_str}.md", render_daily_note(metrics))
+            write_file(access_token, folder_id, f"{date_str}.md", render_daily_note(metrics))
 
     activities = fetch_activities(garmin, dates[0], dates[-1])
     for activity in activities:
         if not dry_run:
             note_name = f"workout-{(activity['start_time_local'] or '')[:10]}-{activity['activity_id']}.md"
-            write_file(note_name, render_workout_note(activity))
+            write_file(access_token, folder_id, note_name, render_workout_note(activity))
 
     data = {
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
@@ -47,9 +50,16 @@ def run_sync(days: int, dry_run: bool) -> dict:
         "activities": activities,
     }
     if not dry_run:
-        write_json("data.json", data)
+        write_json(access_token, folder_id, "data.json", data)
 
     return data
+
+
+def run_sync(days: int, dry_run: bool) -> dict:
+    garmin = get_client()
+    access_token = None if dry_run else get_access_token()
+    folder_id = None if dry_run else get_garmin_folder_id()
+    return run_sync_with_client(garmin, access_token, folder_id, days, dry_run)
 
 
 def _summarize(data: dict) -> None:

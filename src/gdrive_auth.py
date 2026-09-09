@@ -142,22 +142,31 @@ def ensure_garmin_folder(access_token: str) -> str:
     return resp.json()["id"]
 
 
-def get_access_token() -> str:
-    """Return a valid access token, refreshing via the stored refresh token."""
-    token_data = json.loads(decrypt_from_file(TOKEN_FILE))
-    client_id, client_secret = _load_client()
+def refresh_access_token(client_id: str, client_secret: str, refresh_token: str) -> str:
+    """Exchange a refresh token for a fresh access token. Pure - no file I/O -
+    so callers that keep their credentials elsewhere (e.g. the Streamlit
+    app's st.secrets) can reuse it without touching this session's local
+    secrets/ files.
+    """
     resp = requests.post(
         TOKEN_URL,
         data={
             "client_id": client_id,
             "client_secret": client_secret,
-            "refresh_token": token_data["refresh_token"],
+            "refresh_token": refresh_token,
             "grant_type": "refresh_token",
         },
         timeout=30,
     )
     resp.raise_for_status()
     return resp.json()["access_token"]
+
+
+def get_access_token() -> str:
+    """Return a valid access token using this session's local secrets/ files."""
+    token_data = json.loads(decrypt_from_file(TOKEN_FILE))
+    client_id, client_secret = _load_client()
+    return refresh_access_token(client_id, client_secret, token_data["refresh_token"])
 
 
 def get_garmin_folder_id() -> str:
