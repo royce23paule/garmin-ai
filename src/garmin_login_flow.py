@@ -59,6 +59,17 @@ def main() -> None:
 
     try:
         garmin = Garmin(email=email, password=password, prompt_mfa=_prompt_mfa)
+        # Only mobile+requests reaches Garmin at all through this session's
+        # TLS-terminating proxy - the cffi strategies get connection resets
+        # (their spoofed TLS fingerprint doesn't survive re-termination) and
+        # portal+requests hits Cloudflare's bot challenge. Skipping the other
+        # three avoids tripping Cloudflare three more times per attempt.
+        garmin.client.skip_strategies = {
+            "mobile+cffi",
+            "widget+cffi",
+            "portal+cffi",
+            "portal+requests",
+        }
         garmin.login()
     except Exception as e:  # noqa: BLE001 - report any failure back via status file
         _set_status(f"failed: {e}")
